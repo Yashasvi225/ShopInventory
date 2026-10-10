@@ -1,7 +1,7 @@
 const { scope } = require('../utils/storeScope');
 const Product = require('../models/Product');
 const Sale = require('../models/Sale');
-const { getReorderRecommendations } = require('../services/geminiService');
+const { getReorderRecommendations, recommendationAnalysis } = require('../services/geminiService');
 
 function startOfDaysAgo(days) {
   const d = new Date();
@@ -14,7 +14,7 @@ async function reorderSuggestions(req, res, next) {
   try {
     const products = await Product.find({ ...scope(req) }).lean();
     if (!products.length) {
-      return res.json({ suggestions: [], source: 'NO_DATA', generatedAt: new Date().toISOString() });
+      return res.json({ suggestions: [], source: 'NO_DATA', analysis: recommendationAnalysis([]), generatedAt: new Date().toISOString() });
     }
 
     const since30 = startOfDaysAgo(29);
@@ -65,7 +65,7 @@ async function reorderSuggestions(req, res, next) {
     });
 
     const result = await getReorderRecommendations(items, req.store.shopType);
-    res.json({ ...result, generatedAt: new Date().toISOString() });
+    res.json({ ...result, analysis: recommendationAnalysis(items, result.suggestions), generatedAt: new Date().toISOString() });
   } catch (error) {
     next(error);
   }

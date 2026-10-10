@@ -136,6 +136,14 @@ export function validApiData(path, data, method = "GET") {
       object(data) &&
       ["GEMINI", "RULE_BASED", "NO_DATA"].includes(data.source) &&
       optionalDate(data.generatedAt) &&
+      (data.providerError == null ||
+        (object(data.providerError) &&
+          ["NOT_CONFIGURED", "CONFIGURATION_OR_ACCESS", "MODEL_UNAVAILABLE", "INVALID_REQUEST", "RATE_LIMITED", "TIMEOUT", "NETWORK_ERROR", "PROVIDER_UNAVAILABLE", "INVALID_RESPONSE", "PROVIDER_ERROR"].includes(data.providerError.code) &&
+          (data.providerError.httpStatus == null || Number.isInteger(data.providerError.httpStatus) && data.providerError.httpStatus >= 100 && data.providerError.httpStatus <= 599) &&
+          optionalDate(data.providerError.retryAt))) &&
+      (data.analysis == null ||
+        (object(data.analysis) && ["totalProducts", "expiredProducts", "eligibleProducts", "productsWithoutRecentSales"].every(key => Number.isSafeInteger(data.analysis[key]) && data.analysis[key] >= 0) &&
+          [null, "NO_PRODUCTS", "ALL_EXPIRED", "NO_RECENT_SALES", "NO_REORDER_NEEDED", "NO_MODEL_SUGGESTIONS"].includes(data.analysis.emptyReason))) &&
       Array.isArray(data.suggestions) &&
       data.suggestions.every(
         (row) =>

@@ -90,6 +90,34 @@ function fallbackRecommendations(items) {
     );
 }
 
+// Counts explain empty results without changing the existing stock calculation.
+function recommendationAnalysis(items, suggestions = []) {
+  const expiredProducts = items.filter(item => isExpired(item.expiryDate)).length;
+  const eligibleProducts = fallbackRecommendations(items).length;
+  const productsWithoutRecentSales = items.filter(item => !(item.averageDailySales > 0)).length;
+  const emptyReason = suggestions.length ? null : !items.length ? 'NO_PRODUCTS'
+    : expiredProducts === items.length ? 'ALL_EXPIRED'
+      : eligibleProducts ? 'NO_MODEL_SUGGESTIONS'
+        : productsWithoutRecentSales === items.length ? 'NO_RECENT_SALES' : 'NO_REORDER_NEEDED';
+  return { totalProducts: items.length, expiredProducts, eligibleProducts, productsWithoutRecentSales, emptyReason };
+}
+
+// Never forward provider messages, request contents or credentials to a client/log.
+function safeGeminiError(error) {
+  const status = Number.isInteger(error?.status) ? error.status : undefined;
+  const networkCodes = ['ENOTFOUND', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT'];
+  const code = ['NOT_CONFIGURED', 'TIMEOUT', 'INVALID_RESPONSE'].includes(error?.code) ? error.code
+    : status === 429 ? 'RATE_LIMITED'
+      : [401, 403].includes(status) ? 'CONFIGURATION_OR_ACCESS'
+        : status === 404 ? 'MODEL_UNAVAILABLE'
+          : status === 400 ? 'INVALID_REQUEST'
+            : status >= 500 ? 'PROVIDER_UNAVAILABLE'
+              : networkCodes.includes(error?.code) || networkCodes.includes(error?.cause?.code) || error?.name === 'TypeError' ? 'NETWORK_ERROR'
+                : 'PROVIDER_ERROR';
+  return { code, ...(status !== undefined ? { httpStatus: status } : {}),
+    ...(code === 'RATE_LIMITED' && quotaRetryAt > Date.now() ? { retryAt: new Date(quotaRetryAt).toISOString() } : {}) };
+}
+
 // Validate Gemini output before sending it to frontend.
 function validateGeminiSuggestions(raw, items) {
   if (!Array.isArray(raw)) {
@@ -97,6 +125,7 @@ function validateGeminiSuggestions(raw, items) {
   }
 
   const source = new Map(items.map(item => [item.productId, item]));
+  const eligible = new Map(fallbackRecommendations(items).map(item => [item.productId, item.suggestedReorderQuantity]));
 
   const seen = new Set();
   const valid = [];
@@ -111,7 +140,7 @@ function validateGeminiSuggestions(raw, items) {
     const original = source.get(row.productId);
 
     if (
-      !original ||
+      !original || !eligible.has(original.productId) ||
       seen.has(original.productId) || productName !== original.productName ||
       isExpired(original.expiryDate)
     ) {
@@ -119,7 +148,7 @@ function validateGeminiSuggestions(raw, items) {
     }
 
     const qty = row.suggestedReorderQuantity;
-    const maximum = Math.max(1, Math.max(original.minimumStock * 2, Math.ceil(original.averageDailySales * 30 + original.minimumStock)) - original.currentStock);
+    const maximum = eligible.get(original.productId);
     const urgency = String(
       row.urgency || ''
     ).toUpperCase();
@@ -251,6 +280,8 @@ Never invent products or numbers.
 Identify each product by its exact productId and name, including products with identical names.
 Suggested quantities must be positive integers within the existing rule-based target
 (max(minimumStock * 2, ceil(averageDailySales * 30 + minimumStock)) - currentStock, at least 1).
+Only recommend a product when currentStock <= minimumStock, or when averageDailySales > 0
+and currentStock / averageDailySales <= 14. Return [] if no product qualifies.
 
 Never recommend an expired product.
 
@@ -368,15 +399,16 @@ async function getReorderRecommendations(
       source: 'GEMINI'
     };
   } catch (error) {
+    const providerError = safeGeminiError(error);
     console.warn(
       'Gemini unavailable; using rule-based fallback:',
-      { code: ['TIMEOUT', 'INVALID_RESPONSE', 'NOT_CONFIGURED'].includes(error.code) ? error.code : 'PROVIDER_ERROR',
-        ...(Number.isInteger(error.status) ? { status: error.status } : {}) }
+      providerError
     );
 
     return {
       suggestions: fallback,
-      source: 'RULE_BASED'
+      source: 'RULE_BASED',
+      providerError
     };
   }
 }
@@ -462,4 +494,6 @@ module.exports = {
   generateExpiryRecommendation,
   validateExpiryRecommendation,
   boundedGeminiCall,
+  recommendationAnalysis,
+  safeGeminiError,
 };

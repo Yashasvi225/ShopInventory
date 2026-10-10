@@ -14,6 +14,12 @@ export async function withDatabase(run) {
 }
 export const test = base.extend({
   account: async ({}, use) => {
+    if (process.env.SIM_VERIFICATION_TOKEN) {
+      const health = await fetch('http://localhost:5000/api/health');
+      if (!health.ok || (await health.json()).verificationOwner !== process.env.SIM_VERIFICATION_TOKEN) {
+        throw new Error('Isolated API identity mismatch; refusing account/data writes');
+      }
+    }
     const id = randomUUID();
     const account = { email: `verify-${id}@example.invalid`, name: `Migration verification ${id}`, password: `Verification-${id}`, additional: [] };
     try { await use(account); }

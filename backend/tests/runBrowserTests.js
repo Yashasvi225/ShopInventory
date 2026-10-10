@@ -10,7 +10,7 @@ async function run() {
   if (!process.env.MONGO_URI) throw new Error('Configure backend/.env first');
   try {
     const health = await fetch('http://localhost:5000/api/health', { signal: AbortSignal.timeout(1000) });
-    if (health.ok()) throw new Error('Stop the existing API on port 5000 before offline browser tests');
+    if (health.ok) throw new Error('Stop the existing API on port 5000 before offline browser tests');
   } catch (error) { if (error.message.startsWith('Stop the existing')) throw error; }
   const token = randomUUID().replaceAll('-', '');
   // Atlas limits database names to 38 bytes; four prefix + 32 random hex bytes.
@@ -34,8 +34,15 @@ async function run() {
     const credentials = url.username ? `${url.username}:${url.password}@` : '';
     testUri = `mongodb://${credentials}${hosts.join(',')}/${databaseName}?${query}`;
   }
-  const env = { ...process.env, MONGO_URI: testUri, GEMINI_API_KEY: '', NODE_ENV: 'test', PORT: '5000' };
-  let api, browser, owned = false;
+  const env = { ...process.env, MONGO_URI: testUri, GEMINI_API_KEY: '', NODE_ENV: 'test', PORT: '5000', SIM_VERIFICATION_TOKEN: token };
+  let api, browser, monitor, isolationFailure = false, owned = false;
+  const stopBrowser = async () => {
+    if (!browser || browser.exitCode != null) return;
+    if (process.platform === 'win32') {
+      const killer = spawn('taskkill.exe', ['/pid', String(browser.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true });
+      await once(killer, 'exit');
+    } else browser.kill();
+  };
   try {
     if ((await client.db(databaseName).listCollections().toArray()).length) throw new Error('Test database already exists; refusing reuse');
     await client.db(databaseName).createCollection('__verification_owner');
@@ -52,7 +59,12 @@ async function run() {
         const category = /EADDRINUSE/.test(startup) ? 'port conflict' : /Cannot find module/.test(startup) ? 'missing module' : /authentication failed|bad auth/i.test(startup) ? 'database authentication' : /Database connection failed/.test(startup) ? 'database connection' : 'startup error';
         throw new Error(`Offline API exited before startup (${category}, exit ${api.exitCode})`);
       }
-      try { ready = (await fetch('http://localhost:5000/api/health', { signal: AbortSignal.timeout(1000) })).ok; } catch {}
+      let health;
+      try { health = await fetch('http://localhost:5000/api/health', { signal: AbortSignal.timeout(1000) }); } catch {}
+      if (health?.ok) {
+        if ((await health.json()).verificationOwner !== token) throw new Error('Port 5000 belongs to another API; isolated verification refused');
+        ready = true;
+      }
       if (ready) break;
       await new Promise(resolve => setTimeout(resolve, 500));
     }
@@ -60,10 +72,22 @@ async function run() {
     console.log('Running real browser/API tests in a new isolated MongoDB database with no paid AI calls.');
     const npmCli = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js');
     browser = spawn(process.execPath, [npmCli, '--prefix', '../frontend', 'test', '--', ...process.argv.slice(2)], { cwd: backend, env, stdio: 'inherit', windowsHide: true });
+    monitor = setInterval(async () => {
+      if (isolationFailure || browser.exitCode != null) return;
+      try {
+        const health = await fetch('http://localhost:5000/api/health', { signal: AbortSignal.timeout(1000) });
+        if (!health.ok || (await health.json()).verificationOwner !== token) throw new Error('API isolation lost');
+      } catch {
+        isolationFailure = true;
+        console.error('Isolated API identity lost; stopping browser tests. Do not count this run as verified.');
+        await stopBrowser();
+      }
+    }, 1000);
     const [code] = await once(browser, 'exit');
-    process.exitCode = code == null ? 1 : code;
+    process.exitCode = isolationFailure || code == null ? 1 : code;
   } finally {
-    if (browser && browser.exitCode == null) { browser.kill(); await once(browser, 'exit'); }
+    clearInterval(monitor);
+    if (browser && browser.exitCode == null) { await stopBrowser(); if (browser.exitCode == null) await once(browser, 'exit'); }
     if (api && api.exitCode == null) { api.kill(); await once(api, 'exit'); }
     // Only the exact random database created by this invocation is eligible.
     if (databaseName !== `sim_${token}` || !/^[a-f0-9]{32}$/.test(token) || databaseName === originalDatabase) throw new Error('Unsafe test database cleanup target');

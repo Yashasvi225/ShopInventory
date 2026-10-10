@@ -8,6 +8,7 @@ import { PageHeading, ResourceState, SummaryCards } from '../components/UI';
 import Icon from '../components/Icon';
 import ExpiryAlerts from '../components/ExpiryAlerts';
 import { useSubmission } from '../hooks/useSubmission';
+import { providerMessage, emptyRecommendationMessage, summarizeRecommendations } from '../utils/recommendationMessages';
 
 export default function AIRecommendations() {
   const { shopType } = useSession();
@@ -24,9 +25,10 @@ export default function AIRecommendations() {
   const status = loading ? 'Analyzing real inventory and sales data...' : failure
     ? failure.status === 429 ? 'Recommendation requests are rate limited. Please wait before retrying.' : 'Recommendations could not be refreshed.'
     : result?.source === 'GEMINI' ? 'Generated with Gemini using your inventory and sales data.'
-      : result?.source === 'RULE_BASED' ? 'Gemini is unavailable, so safe rule-based recommendations are shown.'
+      : result?.source === 'RULE_BASED' ? (result.suggestions.length ? 'Gemini is unavailable, so safe rule-based recommendations are shown.' : 'Gemini is unavailable. The existing stock rules returned no reorder suggestions.')
         : result ? 'Add products and sales data to generate recommendations.' : 'Ready to analyze your inventory.';
   const rows = result?.suggestions || [];
+  const totals = summarizeRecommendations(rows);
   const ready = result && !loading && !failure;
   const sourceLabel = result?.source === 'GEMINI' ? 'Gemini' : result?.source === 'RULE_BASED' ? 'Rule-based fallback' : 'No inventory data';
   const number = value => value == null ? 'Not provided' : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(value);
@@ -41,16 +43,17 @@ export default function AIRecommendations() {
       </div><span className="ai-status-icon"><Icon name={failure ? 'warning' : 'ai-recommendations'} /></span>
     </section>
     <SummaryCards className="page-summary supplier-summary" items={[
-      ['Returned suggestions', ready ? rows.length : null],
-      ['Actionable suggestions', ready ? rows.filter(row => row.suggestedReorderQuantity > 0).length : null],
-      ['Purchase units suggested', ready ? rows.reduce((sum, row) => sum + row.suggestedReorderQuantity, 0) : null],
+      ['Returned suggestions', ready ? totals.returned : null],
+      ['Actionable suggestions', ready ? totals.actionable : null],
+      ['Purchase units suggested', ready ? totals.units : null],
     ]} />
     <section className="panel card recommendation-panel" aria-labelledby="reorder-suggestions-heading">
       <div className="panel-heading"><h2 id="reorder-suggestions-heading">Reorder suggestions</h2>{ready && <span className="badge ok">{sourceLabel}</span>}</div>
       <p className="panel-description">Guidance is based on recent 30-day sales and stock levels. Quantities are advisory; review stock before purchasing.</p>
-      {ready && result.source === 'RULE_BASED' && <p className="fallback-note"><Icon name="warning" />Gemini could not complete this analysis. Review these stock-rule suggestions against current demand before purchasing.</p>}
+      {ready && result.source === 'RULE_BASED' && <p className="fallback-note" role="status"><Icon name="warning" /><span>{providerMessage(result)} {rows.length ? 'Review these stock-rule suggestions against current demand before purchasing.' : 'No actionable stock-rule suggestions are available for this analysis.'}</span></p>}
+      {ready && result.analysis && <p className="chart-note">Analyzed {result.analysis.totalProducts} products in the active store: {result.analysis.eligibleProducts} eligible under stock rules, {result.analysis.expiredProducts} expired, and {result.analysis.productsWithoutRecentSales} without recent recorded sales.</p>}
       <ResourceState loading={loading} error={failure?.message} onRetry={generate} empty={!rows.length}
-        emptyMessage={!result ? 'Click Generate AI Recommendations to analyze your current inventory.' : result.source === 'NO_DATA' ? 'No products are available for analysis. Add products and record sales to build demand history.' : 'No reorder suggestions were returned. Review stock and recorded sales before purchasing.'}>
+        emptyMessage={emptyRecommendationMessage(result)}>
         <div className="recommendation-grid">{rows.map((row, index) => {
           const actionable = row.suggestedReorderQuantity > 0;
           const badge = row.urgency === 'CRITICAL' ? 'out' : ['HIGH', 'MEDIUM'].includes(row.urgency) ? 'warn' : 'ok';
