@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+test-results/
+playwright-report/
+.demo-data.local.json
+.demo-presentation.local.json*
+backend/backups/
+backend/.env.example
+frontend/.env.example

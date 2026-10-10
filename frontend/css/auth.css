@@ -1,0 +1,20 @@
+/* Authentication shares tokens and controls with the application shell. */
+.auth { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 100dvh; background: var(--color-background); }
+.auth .aside { display: flex; flex-direction: column; justify-content: space-between; gap: 48px; padding: clamp(32px, 5vw, 72px); background: var(--color-sage-soft); border-right: 1px solid var(--color-border); }
+.auth .aside h1 { max-width: 480px; font-size: clamp(32px, 3.6vw, 48px); font-weight: 600; line-height: 1.15; letter-spacing: -1.2px; margin: 0 0 20px; }
+.auth .aside p { max-width: 340px; color: var(--color-muted); font-size: 15px; line-height: 1.7; }
+.auth .mainauth { display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; min-width: 0; padding: 36px; }
+.auth .authcard { width: min(440px, 100%); min-width: 0; padding: 36px; }
+.auth .authcard h2 { margin: 0; font-size: 26px; letter-spacing: -.6px; }
+.auth .authcard > .muted { margin: 8px 0 28px; }
+.auth .authcard .btn { width: 100%; margin-top: 6px; }
+.auth .foot { margin: 24px 0 0; color: var(--color-muted); font-size: 13px; text-align: center; }
+.auth .foot a { color: var(--color-primary); font-weight: 600; }
+@media (max-width: 800px) {
+  .auth { grid-template-columns: minmax(0, 1fr); }
+  .auth .aside { padding: 28px; gap: 40px; border-right: 0; border-bottom: 1px solid var(--color-border); }
+  .auth .aside h1 { font-size: 32px; margin-bottom: 12px; }
+  .auth .aside p { margin-bottom: 0; font-size: 14px; }
+  .auth .mainauth { padding: 24px 16px; }
+  .auth .authcard { padding: 28px 24px; }
+}

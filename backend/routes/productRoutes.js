@@ -1,0 +1,2 @@
+const { resolveStore } = require('../middleware/storeMiddleware');
+const router=require('express').Router();const c=require('../controllers/productController');const {protect}=require('../middleware/authMiddleware');router.use(protect, resolveStore);router.route('/').get(c.getProducts).post(c.createProduct);router.route('/:id').get(c.getProduct).put(c.updateProduct).delete(c.deleteProduct);module.exports=router;

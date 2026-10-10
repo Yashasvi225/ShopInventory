@@ -1,0 +1,30 @@
+{
+  "name": "shop-inventory-manager-backend",
+  "version": "1.0.0",
+  "description": "REST API for Shop Inventory Manager",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test tests/*.test.js",
+    "seed:demo": "node demo/cli.js seed",
+    "cleanup:demo": "node demo/cli.js cleanup",
+    "seed:demo:presentation": "node demo/presentation.js seed",
+    "demo:credentials": "node demo/presentation.js credentials",
+    "demo:reset-passwords": "node demo/presentation.js reset-passwords",
+    "cleanup:demo:presentation": "node demo/presentation.js cleanup",
+    "test:browser:offline": "node tests/runBrowserTests.js",
+    "migrate:grocery": "node migrations/cli.js",
+    "migrate:stores": "node migrations/storeCli.js",
+    "migrate:demo-transfer": "node migrations/demoTransferCli.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.19.1"
+  }
+}
